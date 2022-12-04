@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import config as cfg
 
 
 class ConvBlock(nn.Module):
@@ -54,17 +55,60 @@ class DenseBlock(nn.Module):
             layer_list += [ConvBlock(in_channels=in_put)]
             in_put+=self.in_channels
         return  layer_list
+
     def forward(self, x):
-         input = x
+        residuals = [x]
         for layer in self.layers:
-            y = layer(x)
-            x = torch.cat([x, y], dim=1)
+            y = layer(torch.cat(residuals, dim=1))
+            residuals.append(y)
+        return y
+
+
 
 
 class DenseNet(nn.Module):
-    def __init__(self):
+    def __init__(self, image_channels, class_num=10):
         super(DenseNet, self).__init__()
-        pass
+        self.image_channels = image_channels
+
+        self.structure = cfg.layers
+
+        self.body,out_channels = self._layer_builder()
+
+        self.init_conv = nn.Conv2d(image_channels,
+                                   image_channels,
+                                   kernel_size=7,
+                                   stride=2,
+                                   padding=3)
+        self.bn = nn.BatchNorm2d(image_channels)
+
+        self.relu = nn.ReLU()
+
+        self.max_pool = nn.MaxPool2d()
+
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.fc = nn.Linear(out_channels, class_num)
+
+    def _layer_builder(self):
+
+        layer_list = nn.ModuleList()
+        in_channels = self.image_channels
+
+        for layer in self.structure:
+            if layer[0] == 'D':
+                layer_list += [DenseBlock(in_channels, layer[1])]
+                in_channels = in_channels * layer[1]
+            elif layer[0] == 'T':
+                layer_list += [TransitionBlock(in_channels)]
+
+        return  layer_list, in_channels
+    def forward(self, x):
+
+        x = self.relu(self.bn(self.init_conv(x)))
+        x = self.max_pool(x)
+        for  in self.body:
+            x =
 
 
 def test():
