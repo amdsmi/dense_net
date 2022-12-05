@@ -7,7 +7,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels):
-        print(in_channels)
+        # print(in_channels)
         super(ConvBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
         self.bn1 = nn.BatchNorm2d(in_channels)
@@ -17,9 +17,7 @@ class ConvBlock(nn.Module):
         self.drop_out = nn.Dropout()
 
     def forward(self, x):
-        print(x.shape)
         x = self.bn1(x)
-        print(x.shape)
         x = self.relu(x)
         x = self.conv1(x)
         x = self.bn3(x)
@@ -53,11 +51,12 @@ class DenseBlock(nn.Module):
 
     def _layer_builder(self):
 
-        in_put = self.in_channels
+        in_put = [self.in_channels]
         layer_list = nn.ModuleList()
         for layer in range(self.layers_num):
-            layer_list += [ConvBlock(in_channels=in_put)]
-            in_put += self.in_channels
+            layer_list += [ConvBlock(in_channels=sum(in_put))]
+            in_put.append(sum(in_put))
+
         return layer_list
 
     def forward(self, x):
@@ -65,6 +64,7 @@ class DenseBlock(nn.Module):
         for layer in self.layers:
             y = layer(torch.cat(residuals, dim=1))
             residuals.append(y)
+
         return y
 
 
@@ -87,10 +87,16 @@ class DenseNet(nn.Module):
         self.relu = nn.ReLU()
 
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-
         self.fc = nn.Linear(out_channels, class_num)
+
+    @staticmethod
+    def _channels_calculator(in_channels, num):
+        channels = [in_channels]
+        for _ in range(num):
+            c = sum(channels)
+            channels.append(c)
+        return c
 
     def _layer_builder(self):
 
@@ -100,7 +106,8 @@ class DenseNet(nn.Module):
         for layer in self.structure:
             if layer[0] == 'D':
                 layer_list += [DenseBlock(in_channels, layer[1])]
-                in_channels = in_channels * layer[1]
+                in_channels = self._channels_calculator(in_channels, layer[1])
+
             elif layer[0] == 'T':
                 layer_list += [TransitionBlock(in_channels)]
 
@@ -109,18 +116,15 @@ class DenseNet(nn.Module):
     def forward(self, x):
 
         x = self.relu(self.bn(self.init_conv(x)))
-
         x = self.max_pool(x)
-
         for layer in self.body:
             x = layer(x)
-
         x = self.avg_pool(x)
-
+        x = x.reshape(x.shape[0], -1)
         return self.fc(x)
 
 
 if __name__ == '__main__':
-    x = torch.randn(1, 3, 224, 224).to(device)
+    x = torch.randn(3, 3, 224, 224).to(device)
     net = DenseNet().to(device)
     print(net(x).shape)
